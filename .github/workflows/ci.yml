@@ -1,46 +1,87 @@
-- name: Deploy to Server with Docker
-  run: |
-    ssh -i ~/.ssh/id_deploy ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_SERVER_IP }} << 'DEPLOY_SCRIPT'
-    
-    set -e
-    
-    echo "🚀 Deployment started..."
-    
-    cd ${{ secrets.DEPLOY_PATH }}
-    
-    echo "📥 Pulling latest code from GitHub..."
-    git pull origin main
-    
-    echo "🐳 Building Docker image..."
-    sudo docker build -t cicdlearn:latest .
-    
-    echo "🛑 Stopping and removing old container..."
-    sudo docker stop cicdlearn || true
-    sudo docker rm cicdlearn || true
-    
-    # ⭐ IMPORTANT: Free up port 3000
-    echo "🔓 Freeing port 3000..."
-    sudo fuser -k 3000/tcp || true
-    sleep 5
-    
-    echo "🚀 Starting new container..."
-    sudo docker run -d -p 3000:3000 --name cicdlearn cicdlearn:latest
-    
-    echo "✅ Deployment completed!"
-    sudo docker ps
-    
-    DEPLOY_SCRIPT
+name: NODE API CICD
 
-- name: Health Check
-  run: |
-    echo "🏥 Running health check..."
-    sleep 15
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
     
-    if curl -f -s -o /dev/null "http://${{ secrets.DEPLOY_SERVER_IP }}:3000"; then
-      echo "✅ App is healthy!"
-    else
-      echo "❌ Health check failed!"
-      # Show logs to debug
-      ssh -i ~/.ssh/id_deploy ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_SERVER_IP }} "sudo docker logs cicdlearn --tail 20"
-      exit 1
-    fi
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      
+      - name: Install Dependencies
+        run: npm install
+      
+      - name: Verify Application
+        run: |
+          timeout 5 node index.js || true
+          echo "✅ Application verified successfully"
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H ${{ secrets.DEPLOY_SERVER_IP }} >> ~/.ssh/known_hosts 2>/dev/null
+      
+      - name: Check Server Status
+        run: |
+          ssh -i ~/.ssh/id_deploy ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_SERVER_IP }} << 'CHECK'
+          echo "=== What's on port 3000? ==="
+          sudo netstat -tulpn | grep :3000 || echo "Nothing on port 3000"
+          echo "=== All Docker containers ==="
+          sudo docker ps -a
+          echo "=== Docker logs of existing container ==="
+          sudo docker logs cicdlearn --tail 20 || echo "No container found"
+          CHECK
+      
+      - name: Deploy to Server with Docker
+        run: |
+          ssh -i ~/.ssh/id_deploy ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_SERVER_IP }} << 'DEPLOY_SCRIPT'
+          set -e
+          echo "🚀 Deployment started..."
+          cd ${{ secrets.DEPLOY_PATH }}
+          echo "📥 Pulling latest code from GitHub..."
+          git pull origin main
+          echo "🐳 Building Docker image..."
+          sudo docker build -t cicdlearn:latest .
+          echo "🛑 Stopping and removing old container..."
+          sudo docker stop cicdlearn || true
+          sudo docker rm cicdlearn || true
+          echo "🔓 Freeing port 3000..."
+          sudo fuser -k 3000/tcp || true
+          sleep 5
+          echo "🚀 Starting new container..."
+          sudo docker run -d -p 3000:3000 --name cicdlearn cicdlearn:latest
+          echo "✅ Deployment completed!"
+          sudo docker ps
+          DEPLOY_SCRIPT
+      
+      - name: Health Check
+        run: |
+          echo "🏥 Running health check..."
+          sleep 15
+          if curl -f -s -o /dev/null "http://${{ secrets.DEPLOY_SERVER_IP }}:3000"; then
+            echo "✅ App is healthy!"
+          else
+            echo "❌ Health check failed!"
+            ssh -i ~/.ssh/id_deploy ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_SERVER_IP }} "sudo docker logs cicdlearn --tail 20"
+            exit 1
+          fi
