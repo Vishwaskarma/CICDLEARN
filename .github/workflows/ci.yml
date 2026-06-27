@@ -1,0 +1,61 @@
+# Workflow ka naam
+name: NODE API CICD
+
+# Workflow kab trigger hoga
+on:
+  # Jab koi code push kare
+  push:
+
+    # Aur push sirf main branch par ho
+    branches:
+      - main
+
+# Workflow ke andar jobs define hoti hain
+jobs:
+
+  # Ye job ka naam hai
+  build:
+
+    # GitHub kis operating system ki machine provide karega.
+    # Har workflow ke liye ek fresh Ubuntu VM create hoti hai.
+    runs-on: ubuntu-latest
+
+    # Is job me execute hone wale saare steps.
+    steps:
+
+      # Sirf UI me dikhne wala step ka naam.
+      - name: Checkout Repository
+
+        # GitHub ka official action jo repository ka code
+        # runner machine par clone karta hai.
+        uses: actions/checkout@v4
+
+      # UI me step ka naam.
+      - name: Setup Node.js
+
+        # GitHub ka official action jo Node.js install karta hai.
+        uses: actions/setup-node@v4
+
+        # Action ko configuration dene ke liye "with" use hota hai.
+        with:
+
+          # Kaunsa Node.js version install karna hai.
+          node-version: 22
+
+      # UI me step ka naam.
+      - name: Install Dependencies
+
+        # Runner machine par ye command execute hogi.
+        # package.json padhega aur node_modules install karega.
+        run: npm install
+
+      # UI me step ka naam.
+      - name: Verify Application
+
+        # Ye command Node application ko start karegi.
+        # NOTE:
+        # Production pipeline me generally "npm test"
+        # ya health check chalaya jata hai,
+        # kyunki "node index.js" server ko continuously
+        # run karta rehta hai.
+        run: node index.js
