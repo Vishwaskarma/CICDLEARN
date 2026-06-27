@@ -13,6 +13,9 @@ app.get('/contact',(req,res)=>{
 app.get('/service',(req,res)=>{
     res.send('This is service page');
 })
+app.get('/Home',(req,res)=>{
+    res.send('Hello this is home page');
+})
 
 app.listen(3000,()=>{
     console.log(`Server running on port ${port}`)

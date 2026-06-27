@@ -41,7 +41,7 @@ jobs:
           chmod 600 ~/.ssh/id_deploy
           ssh-keyscan -H ${{ secrets.DEPLOY_SERVER_IP }} >> ~/.ssh/known_hosts 2>/dev/null
       
-      - name: Deploy to Server
+      - name: Deploy to Server with Docker
         run: |
           ssh -i ~/.ssh/id_deploy ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_SERVER_IP }} << 'DEPLOY_SCRIPT'
           
@@ -54,19 +54,28 @@ jobs:
           echo "📥 Pulling latest code from GitHub..."
           git pull origin main
           
-          echo "📦 Installing dependencies..."
-          npm install --production
+          echo "🐳 Building Docker image..."
+          sudo docker build -t cicdlearn:latest .
           
-          echo "♻️  Restarting PM2 application..."
-          pm2 restart all --update-env
+          echo "🛑 Stopping old container..."
+          sudo docker stop cicdlearn || true
+          sudo docker rm cicdlearn || true
+          
+          echo "🚀 Starting new container..."
+          sudo docker run -d -p 3000:3000 --name cicdlearn cicdlearn:latest
           
           echo "✅ Deployment completed successfully!"
-          pm2 status
+          sudo docker ps
           
           DEPLOY_SCRIPT
       
       - name: Health Check
         run: |
           echo "🏥 Running health check..."
-          sleep 3
-          curl -f http://${{ secrets.DEPLOY_SERVER_IP }} && echo "✅ App is healthy!" || echo "⚠️  Connection issue (might be normal)"
+          sleep 5
+          if curl -f -s -o /dev/null "http://${{ secrets.DEPLOY_SERVER_IP }}:3000"; then
+            echo "✅ App is healthy!"
+          else
+            echo "❌ Health check failed!"
+            exit 1
+          fi
