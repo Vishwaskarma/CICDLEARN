@@ -14,7 +14,7 @@ app.get('/service',(req,res)=>{
     res.send('This is service page');
 })
 app.get('/Home',(req,res)=>{
-    res.send('Hello this is home page');
+    res.send('Hello this is home page new page');
 })
 
 app.listen(3000,()=>{
