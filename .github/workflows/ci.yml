@@ -1,141 +1,74 @@
-# Workflow ka naam - GitHub Actions tab mein ye name dikhega
 name: NODE API CICD
 
-# Workflow kab trigger hoga - ye define karte hain
 on:
-  # Push event par trigger hoga
   push:
-    # Sirf main branch par push hone par trigger hoga
-    # Agar develop branch par push karo to ye run nahi hoga
     branches:
       - main
 
-# Sabhi jobs yaha define hote hain
 jobs:
-  # ==================================================
-  # JOB 1: BUILD - Code verify karna aur dependencies install karna
-  # ==================================================
   build:
-    # Kaunse operating system par ye job run hoga
-    # ubuntu-latest = latest Ubuntu VM GitHub provide karega
     runs-on: ubuntu-latest
     
-    # Is job ke andar ke saare steps
     steps:
-      # STEP 1: Repository ka code GitHub runner par clone karo
       - name: Checkout Repository
-        # GitHub ka official action - repository ko download karta hai
         uses: actions/checkout@v4
       
-      # STEP 2: Node.js install karo runner par
       - name: Setup Node.js
-        # Official Node.js setup action
         uses: actions/setup-node@v4
-        # Action ko configuration dete hain
         with:
-          # Kaunsa Node version install karna hai
           node-version: 22
       
-      # STEP 3: npm dependencies install karo
       - name: Install Dependencies
-        # `run:` matlab ye command runner machine par execute hoga
-        # npm install = package.json padhega aur node_modules folder banayega
         run: npm install
       
-      # STEP 4: Application ko test karne ke liye start karo
       - name: Verify Application
-        # Pipe (|) use karte hain multiple lines run karne ke liye
         run: |
-          # timeout 5 = 5 seconds ke liye app chalao, phir stop kar do
-          # node index.js = app ko start karo
-          # || true = agar fail ho to bhi workflow continue rahe (error ignore)
           timeout 5 node index.js || true
           echo "✅ Application verified successfully"
 
-  # ==================================================
-  # JOB 2: DEPLOY - Server par deploy karo
-  # ==================================================
   deploy:
-    # `needs: build` = pehle build job complete hona chahiye, then ye run hoga
-    # Agar build fail ho to deploy run nahi hoga
     needs: build
-    
-    # Ye bhi ubuntu par run hoga
     runs-on: ubuntu-latest
     
     steps:
-      # STEP 1: Code ko dobara download karo deploy job mein
       - name: Checkout Repository
         uses: actions/checkout@v4
       
-      # STEP 2: SSH key setup karo taaki server se connect kar sake
       - name: Setup SSH Key
         run: |
-          # ~/.ssh folder create karo (hidden folder)
           mkdir -p ~/.ssh
-          
-          # GitHub secrets se private SSH key nikal kar file mein daal
-          # ${{ secrets.DEPLOY_SSH_KEY }} = GitHub secret ka value
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_deploy
-          
-          # File ke permissions set karo (security ke liye)
-          # 600 = sirf owner read-write kar sakta hai
+          cat > ~/.ssh/id_deploy << 'EOF'
+${{ secrets.DEPLOY_SSH_KEY }}
+EOF
           chmod 600 ~/.ssh/id_deploy
-          
-          # Server ka SSH fingerprint known_hosts mein add karo
-          # Taaki first time connect karte waqt "yes/no" prompt na aaye
-          # 2>/dev/null = error messages ignore karo
           ssh-keyscan -H ${{ secrets.DEPLOY_SERVER_IP }} >> ~/.ssh/known_hosts 2>/dev/null
       
-      # STEP 3: Server par SSH connection karo aur deploy commands run karo
       - name: Deploy to Server
         run: |
-          # `ssh -i` = SSH key use karke
-          # ${{ secrets.DEPLOY_USER }} = GitHub secret se username nikal
-          # ${{ secrets.DEPLOY_SERVER_IP }} = GitHub secret se server IP nikal
-          # << 'DEPLOY_SCRIPT' ... DEPLOY_SCRIPT = ye sare commands server par run honge
           ssh -i ~/.ssh/id_deploy ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_SERVER_IP }} << 'DEPLOY_SCRIPT'
           
-          # set -e = agar koi command fail ho to script ruk jayega
           set -e
           
           echo "🚀 Deployment started..."
           
-          # ${{ secrets.DEPLOY_PATH }} = GitHub secret se app folder path nikal
-          # cd = change directory - app folder mein jao
           cd ${{ secrets.DEPLOY_PATH }}
           
           echo "📥 Pulling latest code from GitHub..."
-          # git pull = latest code GitHub se download karo
-          # origin main = main branch se pull karo
           git pull origin main
           
           echo "📦 Installing dependencies..."
-          # npm install --production = sirf production dependencies install karo
-          # (devDependencies skip hote hain, size kam hota hai)
           npm install --production
           
           echo "♻️  Restarting PM2 application..."
-          # pm2 restart all = saare PM2 apps restart karo
-          # --update-env = environment variables reload karo
           pm2 restart all --update-env
           
           echo "✅ Deployment completed successfully!"
-          # pm2 status = running apps ka status display karo
           pm2 status
           
-          # DEPLOY_SCRIPT = Server par execute hone wale commands yaha khatam
           DEPLOY_SCRIPT
       
-      # STEP 4: Health check - App properly run kar raha hai ya nahi verify karo
       - name: Health Check
         run: |
           echo "🏥 Running health check..."
-          
-          # sleep 3 = 3 seconds wait karo (app fully start ho jayega)
           sleep 3
-          
-          # curl -f = HTTP request send karo server par
-          # && = agar success ho to ye print karo
-          # || = agar fail ho to ye print karo
           curl -f http://${{ secrets.DEPLOY_SERVER_IP }} && echo "✅ App is healthy!" || echo "⚠️  Connection issue (might be normal)"
